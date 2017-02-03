@@ -1,0 +1,1899 @@
+---
+title: "Untitled"
+author: "Daniel Newman"
+date: "1 September 2016"
+output: html_document
+---
+
+```{r Load and Pre-Process the single trial Data, echo=FALSE, include=FALSE}
+
+#make sure the plyr package is not loaded, because it clashes with dplyr:
+# detach("package:plyr", unload=TRUE)
+
+####Which computer/directory is this being run on?
+location<-"Monash"
+# location<-"DansLaptop"
+
+if (location=="Monash") {
+    setwd(("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_R"))
+} else if (location=="DansLaptop") {
+    setwd(("C:/Users/Dan/Documents/GitHub/OldervsYounger/Analyses Scripts_R"))
+} else setwd(("~"))
+
+
+
+### Install/load required packages
+#List of R packages required for this analysis:
+required_packages <- c("aod", "psych", "ggplot2", "tidyr", "stringr", "lubridate", "readxl","knitr",
+                       "readr", "rmarkdown", "png", "lme4", "ez", "multcomp","zoo", "dplyr", "haven")
+#Install required_packages:
+new.packages <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+#Load required_packages:
+lapply(required_packages, require, character.only = TRUE)
+
+
+
+#Set decimal points and disable scientific notation
+options(digits=3, scipen=999) 
+
+
+###### Import single trial data:
+if (location=="Monash") {
+data <- read.csv("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/master_matrix_R_Older_Younger.csv", header=FALSE)
+#Save a column called ID_num to use to merge with data_Stim_locked_ERP below
+data$ID_num<-data$V1
+} else if (location=="DansLaptop") {
+data <- read.csv("C:/Users/Dan/Documents/GitHub/OldervsYounger/Analyses Scripts_Matlab/master_matrix_R_Older_Younger.csv", header=FALSE)
+#Save a column called ID_num to use to merge with data_Stim_locked_ERP below
+data$ID_num<-data$V1
+} else setwd(("~"))
+#Import IDs:
+if (location=="Monash") {
+ID <- read.table("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/ID_vector_Older_Younger.csv", quote="\"")
+} else if (location=="DansLaptop") {
+ID <- read.table("C:/Users/Dan/Documents/GitHub/OldervsYounger/Analyses Scripts_Matlab/ID_vector_Older_Younger.csv", quote="\"")
+} else setwd(("~"))
+
+data$ID<-data[,1]
+#Replace the participant numbers with IDs:
+data[,1]<-ID[,1]
+#Remove the seperate ID vector now it has been included into data dataframe
+rm(ID)
+drops <- c("ID")
+data<-data[,!(names(data) %in% drops)]
+
+
+
+###### Import data_ParticipantLevel:
+if (location=="Monash") {
+participant_level <- read.csv("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/participant_level_matrix.csv", header=FALSE)
+} else if (location=="DansLaptop") {
+participant_level <- read.csv("C:/Users/Dan/Documents/GitHub/OldervsYounger/Analyses Scripts_Matlab/participant_level_matrix.csv", header=FALSE)
+} else setwd(("~"))
+#Import IDs:
+if (location=="Monash") {
+ID <- read.table("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/IDs.csv", quote="\"")
+} else if (location=="DansLaptop") {
+ID <- read.csv("C:/Users/Dan/Documents/GitHub/OldervsYounger/Analyses Scripts_Matlab/IDs.csv", header=F)
+} else setwd(("~"))
+ID<-plyr::rename(ID,c("V1"="ID"))
+participant_level$ID<-ID$ID
+rm(ID)
+# drops <- c("ID")
+# participant_level<-participant_level[,!(names(participant_level) %in% drops)]
+
+#import demographic data
+if (location=="Monash") {
+Demographics<-read.csv("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_R/Older_Younger_Demographics_etc.csv", header=T)
+} else if (location=="DansLaptop") {
+Demographics<-read.csv("C:/Users/Dan/Documents/GitHub/OldervsYounger/Analyses Scripts_R/Older_Younger_Demographics_etc.csv", header=T)
+} else setwd(("~"))
+
+
+
+# #Merge Demographics into participant_level:
+participant_level <- merge(participant_level, Demographics, by.x = "ID", by.y = "ID")
+rm(Demographics)
+
+
+#Rename data columns:
+data<- data %>% #Rename data columns:
+    rename(., 
+            ID=V1,
+            ResponseMapping=V2,
+            TotalTrialNumber=V3,
+            Trial=V4,
+            ITI=V5,
+            Hemifield=V6,
+            MotionDirection=V7,
+            RespLR=V8,
+            Accuracy=V9,
+            FixationBreak=V10,
+            Art_neg500_0=V11,
+            Art_neg100_100PR=V12,
+            RejectedTrial=V13,
+            Threshold_cohLevel=V14,
+            RT=V15,
+           PreAlphaPower=V16,
+           PreAlphaPowerLH=V17,
+           PreAlphaPowerRH=V18,
+           PreAlphaAsym=V19,
+           PrePupilDiameter=V20,
+           NumRepeatedTrials=V21,
+           N2c=V22,
+		   N2i=V23,
+		   PostAlphaPowerLH=V24,
+		   PostAlphaPowerRH=V25,
+		   CPPHalfPeakLatency=V26,
+		   N2cPeakLatency=V27,
+		   RespLockedCPPSlope=V28,
+		   Group=V29) %>% #next make the required columns into factors:
+    mutate_each_(funs(factor), c("Group", "ITI", "Hemifield", "Accuracy")) %>% #next re-class required vectors into Logicals:
+    mutate_at(vars(starts_with("Art_")), funs(as.logical)) %>% 
+    mutate_at(vars(starts_with("FixBreak_")), funs(as.logical)) %>% 
+    mutate_at(vars(starts_with("RejectedTrial")), funs(as.logical)) %>%#next Rename factor Levels:
+    mutate(Hemifield = ifelse(Hemifield==1, "Left", "Right"), 
+           Accuracy= ifelse(Accuracy==1, "Hit", "Miss"),
+            Group = ifelse(Group==1, "Older", "Younger"))
+
+
+###############Data Cleaning For Single Trial Data######################
+
+
+#Check number of Trials for each participant by running the function 'length', 
+#on "data$RT" for each group, broken down by ID + Light
+num_trials1 <- data %>% group_by(ID) %>% summarise( Trials = length(RT))
+summary(num_trials1$Trials)
+
+##################Accuracy ##########################
+Accuracy_checker <- data %>% group_by(ID) %>% 
+                    summarise(Hits  = sum(Accuracy=="Hit"),
+                               Misses = sum(Accuracy=="Miss" | Accuracy=="WrongButton")) %>%
+                    mutate(Total=Hits+Misses,
+                           Accuracy_overall= (Hits/Total)*100) 
+summary(Accuracy_checker$Accuracy_overall)
+
+#Remove RejectedTrial (with eeg trigger conflicts)
+#trials where RT longer than 1500ms (i.e. after target finished)
+#or RT faster than 150ms (i.e. too fast must be false alarm)
+data<-filter(data, RT<1500, RT>150, !-RejectedTrial)
+
+
+############################################ Log transform:
+################################################################
+data$log_RT<-log(data$RT) #log
+#####Z-score each participant's log_RT data ####
+data$IDbyITIbyHemifield<-interaction(data$ID, data$ITI, data$Hemifield)
+#calculate mean and sd 
+m <- tapply(data$log_RT,data$IDbyITIbyHemifield,mean, na.rm = T)
+s <- tapply(data$log_RT,data$IDbyITIbyHemifield,sd, na.rm = T)
+#calculate log_RT.Z and save it inside data.frame
+data$log_RT.Z <- (data$log_RT-m[data$IDbyITIbyHemifield])/s[data$IDbyITIbyHemifield]
+#Remove trials where absolute log_RT.Z>3 (i.e. remove outlier RTs)
+data<-data[!abs(data$log_RT.Z)>3,]
+
+#Remove trials where absolute log_RT.Z>3 (i.e. remove outlier RTs)
+data<-data[!abs(data$log_RT.Z)>3,] #this is for individual trial 
+
+
+#plot again after outlier removal:
+ggplot(data, aes(RT))  + geom_histogram(aes(y=..count..), colour="black", fill="white") + facet_wrap(~ Group)
+ggplot(data, aes(log_RT))  + geom_histogram(aes(y=..count..), colour="black", fill="white") + facet_wrap(~ Group)
+
+
+#Calculate alpha desynchronisation by subtracting Pre-target Alpha from post target alpha
+data$AlphaDesyncRH<-(data$PreAlphaPowerRH)-(data$PostAlphaPowerRH)
+data$AlphaDesyncLH<-data$PreAlphaPowerLH-data$PostAlphaPowerLH
+
+# Make PostAlpha contralateral (PostAlpha_c) and -Ipsilateral (PostAlpha_i) variables:
+A<-data$Hemifield=="Left"
+#Absolute post target alpha
+data$PostAlpha_c[A]<-data$PostAlphaPowerRH[A]
+data$PostAlpha_c[!A]<-data$PostAlphaPowerLH[!A]
+data$PostAlpha_i[!A]<-data$PostAlphaPowerRH[!A]
+data$PostAlpha_i[A]<-data$PostAlphaPowerLH[A]
+
+#Post target Alpha desynchronisation 
+data$AlphaDesync_c[A]<-data$AlphaDesyncRH[A]
+data$AlphaDesync_c[!A]<-data$AlphaDesyncLH[!A]
+data$AlphaDesync_i[!A]<-data$AlphaDesyncRH[!A]
+data$AlphaDesync_i[A]<-data$AlphaDesyncLH[A]
+
+rm(A)
+
+
+#################################################################################################################################
+#################################################################################################################################
+#################################################################################################################################
+#################################################################################################################################
+
+#Rename participant_level columns of participant_level:
+participant_level<- participant_level %>% #Rename data columns:
+                            rename(., 
+                                    ValidPreAlphaTrials=V1,
+                                    ValidERPTrials=V2,
+                                    PreAlpha_LeftHemi=V3,
+                                    PreAlpha_RightHemi=V4,
+                                    N2c_LeftTarget=V5,
+                                    N2c_RightTarget=V6,
+                                    N2i_LeftTarget=V7,
+                                    N2i_RightTarget=V8,
+                                    AlphaDesync_LeftHemi_LeftTarget=V9,
+                                    AlphaDesync_LeftHemi_RightTarget=V10,
+                                    AlphaDesync_RightHemi_LeftTarget=V11,
+                                    AlphaDesync_RightHemi_RightTarget=V12,
+                                    CPPonset_LeftTarget=V13,
+                                    CPPonset_RightTarget=V14,
+                                    N2c_latency_LeftTarget=V15,
+                                    N2c_latency_RightTarget=V16,
+                                    N2i_latency_LeftTarget=V17,
+                                    N2i_latency_RightTarget=V18,
+                                    CPPslope_LeftTarget=V19,
+                                    CPPslope_RightTarget=V20,
+                                    Group=V21) %>% ##next calculate the ERP asymmetry measures:
+                            mutate(., 
+                                  N2c_Asym = (N2c_LeftTarget-N2c_RightTarget)/(N2c_LeftTarget+N2c_RightTarget), 
+                                  N2i_Asym = (N2i_LeftTarget-N2i_RightTarget)/(N2i_LeftTarget+N2i_RightTarget),
+                                  N2c_latency_Asym = (N2c_latency_LeftTarget-N2c_latency_RightTarget)/(N2c_latency_LeftTarget+N2c_latency_RightTarget), 
+                                  N2i_latency_Asym =(N2i_latency_LeftTarget-N2i_latency_RightTarget)/(N2i_latency_LeftTarget+N2i_latency_RightTarget),
+                                  CPPonset_Asym = (CPPonset_LeftTarget-CPPonset_RightTarget)/(CPPonset_LeftTarget+CPPonset_RightTarget),
+                                  CPPslope_Asym = (CPPslope_LeftTarget-CPPslope_RightTarget)/(CPPslope_LeftTarget+CPPslope_RightTarget),
+                                  Group = ifelse(Group==1, "Older", "Younger")
+                                  )
+#Look at Column names:
+colnames(participant_level)
+             
+#Make the required columns into factors:
+participant_level$Group <- factor(participant_level$Group)     ###Megan uncomment this once you've updated the demographics
+participant_level$Gender <- factor(participant_level$Gender)
+
+#add in accuracy
+participant_level <- merge(participant_level, Accuracy_checker, by.x = "ID", by.y = "ID")
+data <- merge(data, Accuracy_checker, by.x = "ID", by.y = "ID")
+
+
+#Collapse each participant's RT single trials to participant level
+RT_collapsed<- data %>% 
+            group_by(ID, Hemifield) %>%
+            summarise(RT=mean(RT)) %>% #next bring Target-Hemifield up into wide format:
+            spread(Hemifield, RT) %>% #next rename
+            rename(RT_Left=Left, RT_Right=Right) %>% # next Calculate RT asymmetry:
+            mutate(RT_Asym=(RT_Left-RT_Right)/(RT_Left+RT_Right)) 
+#Merge it in with the ERP measures
+participant_level<-merge(participant_level, RT_collapsed, by.x = "ID", by.y = "ID") 
+
+
+############## Participant exclusion ####################   
+#Single trial
+data <-data[data$ID %in% participant_level$ID, ] 
+
+#This ^ Excludes participants from the single trial data if they are not in participant_level
+
+#Kick out trials with fixation breaks:
+data2<-data[!data$FixationBreak,]
+
+#Calculate the number of trials each participant has left after fixation break trials are kicked out:
+num_trials2 <- data %>% group_by(ID) %>% summarise(Trials = length(RT))
+summary(num_trials2$Trials)
+
+#Merge this into the single trial and participant level data sets
+data <- merge(data, num_trials2, by.x = "ID", by.y = "ID")
+participant_level <-merge(participant_level, num_trials2, by.x = "ID", by.y = "ID")
+
+##Kick out HN875 who is an RT outlier (very slow RTs); HN975 has an invalid right target CPP onset
+participant_level<-filter(participant_level, ID!="HN875", ID!="HN975")
+
+
+```
+
+#Significant accuracy difference in behavioural accuracy between Older and Younger participants?
+
+Accuracy distributions have negitive skew so do non-parametric repeated measures permutation test:
+```{r, echo=FALSE, warning=FALSE}
+###Check for Accuracy_overall outliers
+min(participant_level$Accuracy_overall)
+
+#Plot the Accuracy distribution for each group
+ggplot(participant_level, aes(Accuracy_overall))  + geom_histogram() + facet_wrap(~ Group)
+
+############ Are there significant accuracy differences between Older and Younger? ##############
+##############################################################
+#Overall Accuracy_overall by Group
+log <- capture.output({
+Accuracy_Group <- ezPerm(data = participant_level
+                                  , dv = .(Accuracy_overall)
+                                  , wid = .(ID)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the effect of Group on Accuracy:")
+print(Accuracy_Group);
+
+#################################################################################################
+
+#look at mean accuracy for each group
+mean(participant_level$Accuracy_overall[participant_level$Group=="Younger"])
+
+mean(participant_level$Accuracy_overall[participant_level$Group=="Older"])
+```
+
+**So this ^ shows the older participants had significantly lower accuracy than the younger** 
+
+#Healthy younger participants have significant leftward RT asymmetry, and the older participants do not
+```{r, echo=FALSE, warning=FALSE}
+#So get participant level RT into long format so I can run permutated t-tests  
+RT_collapsed<-data2 %>% 
+    group_by(ID, Hemifield, Group) %>%
+    summarise(RT=mean(RT))
+
+#Plot RT by group and hemifield:
+RT_collapsed$Hemifield_by_Group<-interaction(RT_collapsed$Hemifield, RT_collapsed$Group)
+#non log transformed:
+ggplot(RT_collapsed, aes(RT))  + geom_histogram() + facet_wrap(~ Hemifield_by_Group)
+
+## 2 seperate permutated within subjects test for the effect of Hemifield##
+#Younger:
+log <- capture.output({
+RT_Hemifield_Younger <- ezPerm(data = as.data.frame(filter(RT_collapsed, Group=="Younger"))
+                                  , dv = .(RT)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the effect of Hemifield inside Younger only:")
+print(RT_Hemifield_Younger);
+
+
+#Older:
+log <- capture.output({
+RT_Hemifield_Older <- ezPerm(data = as.data.frame(filter(RT_collapsed, Group=="Older"))
+                                  , dv = .(RT)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the effect of Hemifield inside Older only:")
+print(RT_Hemifield_Older);
+RT_Hemifield_Older
+
+
+
+```
+
+
+#However, the difference in RT-asymmetry between the Older and Younger groups is not significant:
+
+```{r, echo=FALSE, warning=FALSE}
+##################################################################################
+ggplot(participant_level, aes(RT_Asym))  + geom_histogram(aes(y=..count..), colour="black", fill="white") + facet_wrap(~ Group)
+
+kable(participant_level %>% group_by(Group) %>% summarise(RT_Asym.mean = mean(RT_Asym)) ,
+    format.args = list(big.mark = ","), digits=4,
+      caption="Mean RT Asym per group")
+
+##Between groups t-test for RT_Asym
+t.test(participant_level$RT_Asym ~ participant_level$Group)
+
+##Try permutated t-test
+log <- capture.output({
+RTasym_Group <- ezPerm(data = participant_level
+                                  , dv = .(RT_Asym)
+                                  , wid = .(ID)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the effect of Group on RT_Asym:")
+print(RTasym_Group);
+
+
+
+
+##Try Group * Hemifield interaction on RT (rather than using RT-asym)
+#So get participant level RT into long format so I can run permutated mixed model anova 
+Perm_data<- participant_level %>%
+    select(ID, RT_Left, RT_Right, Group) %>%
+    na.omit() %>%
+    gather(Hemifield, dv, -ID, -Group)%>%
+    mutate(Hemifield=factor(Hemifield)) %>%
+    mutate(ID=factor(ID)) 
+
+log <- capture.output({
+   Hemifield_Perm <- ezPerm(data = Perm_data
+                          , dv = .(dv)
+                          , wid = .(ID)
+                          , within = .(Hemifield)
+                          , between = .(Group)
+                          , perms = 1000);
+ })
+print("Factorial Permutation test for the Group*Hemifield effect on RT:")
+print(Hemifield_Perm);
+
+
+
+# ##Try seperate one-sample t-test - one for each Group
+t.test (participant_level$RT_Asym[participant_level$Group=="Younger"], mu=0)
+t.test (participant_level$RT_Asym[participant_level$Group=="Older"], mu=0)
+
+
+```
+
+#Look for participant level outliers in RT and RT-asymmetry
+```{r}
+#calculate RT_Asym.Z inside Group and save it 
+m <- tapply(participant_level$RT_Asym,participant_level$Group,mean, na.rm = T)
+s <- tapply(participant_level$RT_Asym,participant_level$Group,sd, na.rm = T)
+participant_level$RT_Asym.Z <- (participant_level$RT_Asym-m[participant_level$Group])/s[participant_level$Group]
+
+#calculate RT_Left.Z inside Group and save it 
+m <- tapply(participant_level$RT_Left,participant_level$Group,mean, na.rm = T)
+s <- tapply(participant_level$RT_Left,participant_level$Group,sd, na.rm = T)
+participant_level$RT_Left.Z <- (participant_level$RT_Left-m[participant_level$Group])/s[participant_level$Group]
+
+#calculate RT_Right.Z inside Group and save it 
+m <- tapply(participant_level$RT_Right,participant_level$Group,mean, na.rm = T)
+s <- tapply(participant_level$RT_Right,participant_level$Group,sd, na.rm = T)
+participant_level$RT_Right.Z <- (participant_level$RT_Right-m[participant_level$Group])/s[participant_level$Group]
+
+
+
+#calculate N2c_LeftTarget.Z inside Group and save it 
+m <- tapply(participant_level$N2c_LeftTarget,participant_level$Group,mean, na.rm = T)
+s <- tapply(participant_level$N2c_LeftTarget,participant_level$Group,sd, na.rm = T)
+participant_level$N2c_LeftTarget.Z <- (participant_level$N2c_LeftTarget-m[participant_level$Group])/s[participant_level$Group]
+
+#calculate N2c_RightTarget.Z inside Group and save it 
+m <- tapply(participant_level$N2c_RightTarget,participant_level$Group,mean, na.rm = T)
+s <- tapply(participant_level$N2c_RightTarget,participant_level$Group,sd, na.rm = T)
+participant_level$N2c_RightTarget.Z <- (participant_level$N2c_RightTarget-m[participant_level$Group])/s[participant_level$Group]
+
+
+
+#Save the participant level file as SPSS data folr
+library(haven)
+write_sav(participant_level, file.path(getwd(), "participant_level_data.sav"))
+
+```
+
+
+#Try linear mixed model approach to test the Group x Hemifield effect on log(RTs) in the single trial data:
+
+```{r, echo=FALSE, warning=FALSE}
+
+#Uncomment this if you want to kick out the 2 participants with lowest accuracy
+### data2<-filter(data2, Accuracy_overall>80)
+
+#Plots show that a log transform fixes the skew in the single trial data
+ggplot(data, aes(RT))  + geom_histogram(aes(y=..count..), colour="black", fill="white") + facet_wrap(~ Group)
+ggplot(data, aes(log_RT))  + geom_histogram(aes(y=..count..), colour="black", fill="white") + facet_wrap(~ Group)
+
+
+########################### Multi-level Models ########################## 
+RT_random_intercepts_only<-lmer(log(RT) ~ 1 + (Hemifield | ID) +(1|ITI) + (1|MotionDirection) + (1|Trial), data = data2, REML=FALSE, na.action = na.omit)
+RT_Group<-update(RT_random_intercepts_only, .~. + Group)
+RT_Hemifield<-update(RT_Group, .~. + Hemifield)
+RT_HemifieldbyGroup<-update(RT_Hemifield, .~. + Hemifield:Group)
+RT_TOT<-update(RT_HemifieldbyGroup, .~. + Trial)
+RT_TOTbyHemifield<-update(RT_TOT, .~. + Hemifield:Trial)
+RT_TOTbyGroup<-update(RT_TOTbyHemifield, .~. + Group:Trial)
+RT_TOTbyHemifieldbyGroup<-update(RT_TOTbyGroup, .~. + Hemifield:Group:Trial)
+anova(RT_random_intercepts_only, RT_Group, RT_Hemifield, RT_HemifieldbyGroup, RT_TOT, RT_TOTbyHemifield, RT_TOTbyGroup, RT_TOTbyHemifieldbyGroup)
+
+
+
+ggplot(data2, aes(Trial, RT, fill=Hemifield,colour=Hemifield)) +
+    stat_smooth(method="glm",level = 0.95,size=1) + 
+    theme(axis.title.x = element_text(face="bold", size=14),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=14),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=14, face="bold")) +
+    theme(legend.text = element_text(size = 12, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black"))  + 
+    facet_wrap(~ Group)
+
+
+
+```
+
+**So the linear mixed model approach ^ shows no significant Group x Hemifield effect**
+
+##However simple effects of hemifield inside group linear mixed model approach confirms that Younger participants have signficantly faster RTs to left targets and Older participants do not: 
+```{r, echo=FALSE, warning=FALSE}
+#########Break down the signifiant Hemifield by group interaction:
+#look at the effect of Hemifield for Older only  -
+summary(glht(lmer(log(RT) ~ Hemifield + (Hemifield|ID)+(1|ITI) + (1|Hemifield)+ (1|Trial), data = data2[data2$Group=="Older",], REML=FALSE, na.action = na.omit)))
+#look at the effect of Hemifield for Younger only - 
+summary(glht(lmer(log(RT) ~ Hemifield + (Hemifield|ID)+(1|ITI) + (1|Hemifield)+ (1|Trial), data = data2[data2$Group=="Younger",], REML=FALSE, na.action = na.omit)))
+
+```
+
+###So Younger have significant pseudoneglect (i.e. faster RTs to left hemifield targets), and Older do not, but this is only seen in the simple effects (doing seperate test for each group). The factorial design gives no significant Group x Hemifield effect
+
+**Nonetheless, lets plot this:**
+
+```{r, echo=FALSE, warning=FALSE}
+
+detach("package:dplyr", unload=TRUE) #Detach dplyr as functions below use plyr
+source("summarySE.R") 
+source("summarySEwithin.R") #function to calculate Std.Er of mean
+source("normDataWithin.R")
+plotdata <- summarySEwithin(data2, measurevar="RT", withinvars=c("Hemifield"), betweenvars="Group", idvar="ID")
+ggplot(plotdata, aes(x=Group, y=RT, fill=Hemifield)) +
+    geom_bar(position=position_dodge(.9), colour="Black", stat="identity") + 
+    geom_errorbar(position=position_dodge(.9), width=.3, aes(ymin=RT-ci, ymax=RT+ci)) + #can change "se" to "ci" if I want to use 95%ci instead
+    geom_hline(yintercept=0) +  coord_cartesian(ylim = c(400, 700)) +
+    xlab("Hemifield") + ylab("RT (ms)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) 
+lapply(required_packages, require, character.only = TRUE) # re-load all librarys no that I'm finished with dlyr
+
+```
+
+###Next I'll move on to look at the EEG data. This EEG data was low-pass filtered to 35Hz, and no high-pass filter applied. No CSD transformation was applied:
+
+#Single trial N2 Amplitude 
+
+###N2c/i measurement window (100ms) was centred on peak amplitude of each INDIVIDUAL PARTICIANT's AVERAGE N2c/i waveforms:
+
+```{r, echo=FALSE, message=FALSE}
+ANOVA_data<- participant_level %>%
+    select(ID, Group, N2c_LeftTarget, N2c_RightTarget, N2i_LeftTarget, N2i_RightTarget) %>%
+    na.omit() %>%
+    gather(condition, dv, -ID, -Group) %>%
+    mutate(Hemifield = replace(condition, condition=="N2c_LeftTarget" | condition=="N2i_LeftTarget", "Left")) %>%
+    mutate(Hemifield = replace(Hemifield, condition=="N2c_RightTarget" | condition=="N2i_RightTarget", "Right")) %>%
+    mutate(Hemisphere = replace(condition, condition=="N2i_LeftTarget" | condition=="N2i_RightTarget", "Ipsilateral")) %>%
+    mutate(Hemisphere = replace(Hemisphere, condition=="N2c_LeftTarget" | condition=="N2c_RightTarget", "Contralateral")) %>%
+    as.data.frame()
+
+log <- capture.output({
+N2amp_perm <- ezPerm(data = ANOVA_data
+                                  , dv = .(dv)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield, Hemisphere)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield*Hemisphere*Group on the N2:")
+print(N2amp_perm);
+
+
+
+## Plot the Group*Hemifield*Hemisphere(N2c vs N2i)
+log <- capture.output({
+N2_boot<-ezBoot(data = ANOVA_data
+                              , dv = .(dv)
+                              , wid = .(ID)
+                              , within = .(Hemifield, Hemisphere)
+                              , between = .(Group)
+                              , resample_within = FALSE
+   )
+})
+ezPlot2(N2_boot, x=Hemifield, col=Group)
+
+#Look at N2c only - i.e. the Group*Hemifield effect on N2c
+log <- capture.output({
+N2c_amp_perm <- ezPerm(data = filter(ANOVA_data, Hemisphere == "Contralateral")
+                                  , dv = .(dv)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield*Group effect on N2c:")
+print(N2c_amp_perm);
+
+
+
+#Look at N2c only - i.e. the Group*Hemifield effect on N2c
+log <- capture.output({
+N2i_amp_perm <- ezPerm(data = filter(ANOVA_data, Hemisphere == "Ipsilateral")
+                                  , dv = .(dv)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield*Group effect on N2i:")
+print(N2i_amp_perm);
+
+
+
+
+##Bootstrapped plot of the Group*Hemifield effect on N2c
+log <- capture.output({
+N2_boot<-ezBoot(data = filter(ANOVA_data, Hemisphere == "Contralateral")
+                                  , dv = .(dv)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , between = .(Group)
+                                  , resample_within = FALSE
+       )
+})
+ezPlot2(N2_boot, x=Hemifield, col=Group)
+
+
+
+
+
+##Box plot of the Group*Hemifield effect on N2c 
+ggplot(filter(ANOVA_data, Hemisphere == "Contralateral"), aes(Group, dv, colour = Hemifield))  + 
+    geom_boxplot() + theme_bw () + ggtitle("N2c")
+
+#Box plot of the Group*Hemifield effect on N2i
+ggplot(filter(ANOVA_data, Hemisphere == "Ipsilateral"), aes(Group, dv, colour = Hemifield))  + 
+    geom_boxplot() + theme_bw ()  + ggtitle("N2i")
+
+
+```
+
+###Look at N2c/i peak latency
+
+```{r, echo=FALSE, message=FALSE}
+N2_latency_participant_level_long<- participant_level %>%
+    select(ID, Group, N2c_latency_LeftTarget, N2c_latency_RightTarget, N2i_latency_LeftTarget, N2i_latency_RightTarget) %>%
+    na.omit() %>%
+    gather(condition, dv, -ID, -Group) %>%
+    mutate(Hemifield = replace(condition, condition=="N2c_latency_LeftTarget" | condition=="N2i_latency_LeftTarget", "Left")) %>%
+    mutate(Hemifield = replace(Hemifield, condition=="N2c_latency_RightTarget" | condition=="N2i_latency_RightTarget", "Right")) %>%
+    mutate(Hemisphere = replace(condition, condition=="N2i_latency_LeftTarget" | condition=="N2i_latency_RightTarget", "Ipsilateral")) %>%
+    mutate(Hemisphere = replace(Hemisphere, condition=="N2c_latency_LeftTarget" | condition=="N2c_latency_RightTarget", "Contralateral")) %>%
+    as.data.frame()
+
+
+
+#First N2c peak latency
+log <- capture.output({
+N2c_latency_perm <- ezPerm(data = filter(N2_latency_participant_level_long, Hemisphere == "Contralateral")
+                                  , dv = .(dv)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield*Group effect on N2c Latency:")
+print(N2c_latency_perm);
+
+
+#Now N2i peak latency
+log <- capture.output({
+N2i_latency_perm <- ezPerm(data = filter(N2_latency_participant_level_long, Hemisphere == "Ipsilateral")
+                                  , dv = .(dv)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield*Group effect on N2i Latency:")
+print(N2i_latency_perm);
+
+
+```
+
+
+
+#CPP onset 
+
+##CPP onset was measured on a participant level (rather than on a single trial level) using the same method as Ger's Current Biology paper. There is no significant Group x Hemifield effect unfortunately 
+
+```{r, echo=FALSE, message=FALSE}
+#Reshape participant_level into long format for modeling with lmw4:
+CPPonset_participant_level_long<- participant_level %>%
+    select(ID, Group, CPPonset_LeftTarget, CPPonset_RightTarget) %>%
+    na.omit() %>%
+    gather(Hemifield, CPPonset, -ID, -Group)
+
+# # #Check which participant have invalid CPPonset
+CPPonset_participant_level_long[CPPonset_participant_level_long$CPPonset==0,]
+#Remove any participants with CPP onsets of zero as they are not valid
+CPPonset_participant_level_long<-CPPonset_participant_level_long[CPPonset_participant_level_long$CPPonset!=0,]
+# 
+
+ezANOVA(
+    data = CPPonset_participant_level_long
+    , dv = .(CPPonset)
+    , wid = .(ID)
+    , within = .(Hemifield)
+    , within_full = .(Hemifield)
+    , between = (Group)
+    , type = 3
+    , detailed = F
+)
+
+log <- capture.output({
+CPPonset_perm <- ezPerm(data = CPPonset_participant_level_long
+                                  , dv = .(CPPonset)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield*Group effect on CPPonset:")
+print(CPPonset_perm);
+
+
+#Younger:
+log <- capture.output({
+CPPonset_perm_Younger <- ezPerm(data = dplyr::filter(CPPonset_participant_level_long, Group=="Younger")
+                                  , dv = .(CPPonset)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield effect on CPPonset inside younger participants only:")
+print(CPPonset_perm_Younger);
+
+
+#Older:
+log <- capture.output({
+CPPonset_perm_Older <- ezPerm(data = filter(CPPonset_participant_level_long, Group=="Older")
+                                  , dv = .(CPPonset)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield effect on CPPonset inside Older participants only:")
+print(CPPonset_perm_Older);
+
+
+```
+
+###So if you test separate  simple effects of Hemifield on CPPonset inside Younger and Older groups (seperate test for each group). It shows there is almost and effect of Hemifield on CPPonset p=0.089, and not close in the older participants p=0.307
+
+**Lets plot this:**
+
+```{r, echo=FALSE, message=FALSE}
+# #Try a boxplot		
+ggplot(CPPonset_participant_level_long, aes(Group, CPPonset, colour = Hemifield))  + 
+    geom_boxplot() + coord_flip() + theme_bw ()
+
+
+```
+
+
+#Younger Participants have significantly steaper CPP slope analysis than Older participants, however 
+
+```{r, echo=FALSE, message=FALSE}
+#Reshape participant_level into long format for modeling with lmw4:
+CPPslope_participant_level_long<- participant_level %>%
+    select(ID, Group, CPPslope_LeftTarget, CPPslope_RightTarget) %>%
+    na.omit() %>%
+    gather(Hemifield, CPPslope, -ID, -Group)
+
+# #Check which participant have invalid CPPslope
+# CPPslope_participant_level_long[CPPslope_participant_level_long$CPPslope<0,]
+# #Remove CPP slopes of zero as they are not valid
+# CPPslope_participant_level_long<-CPPslope_participant_level_long[CPPslope_participant_level_long$CPPslope>0,]
+
+
+# #Histogram of participant's CPPslope scores by group and Hemifield 
+# CPPslope_participant_level_long$Hemifield_By_Group<-interaction(CPPslope_participant_level_long$Hemifield, CPPslope_participant_level_long$Group)
+# ggplot(CPPslope_participant_level_long, aes(CPPslope))  + geom_histogram(aes(y=..count..), colour="black", fill="white") + facet_wrap(~ Hemifield_By_Group)
+
+
+
+# CPPslope_random_intercepts_only<-lmer(CPPslope ~ 1 + (1 | ID) +(1|Hemifield), data = CPPslope_participant_level_long, REML=FALSE, na.action = na.omit)
+# CPPslope_Hemifield<-update(CPPslope_random_intercepts_only, .~. + Hemifield)
+# CPPslope_Group<-update(CPPslope_Hemifield, .~. + Group)
+# CPPslope_Hemifield_By_Group<-update(CPPslope_Group, .~. + Hemifield*Group)
+# anova(CPPslope_random_intercepts_only, CPPslope_Hemifield, CPPslope_Group, CPPslope_Hemifield_By_Group)
+
+
+
+CPPslope_participant_level_long$Hemifield_by_Group<-interaction(CPPslope_participant_level_long$Hemifield, CPPslope_participant_level_long$Group)
+#non log transformed:
+# ggplot(CPPslope_participant_level_long, aes(CPPslope))  + geom_histogram() + facet_wrap(~ Hemifield_by_Group)
+
+log <- capture.output({
+CPPslope_perm <- ezPerm(data = CPPslope_participant_level_long
+                                  , dv = .(CPPslope)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , between = .(Group)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the Hemifield*Group effect on CPPslope:")
+print(CPPslope_perm);
+
+
+
+
+
+log <- capture.output({
+CPPslope_boot<-ezBoot(data = CPPslope_participant_level_long
+                                  , dv = .(CPPslope)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , between = .(Group)
+                                  , resample_within = FALSE
+       )
+})
+ezPlot2(CPPslope_boot, x=Hemifield, col=Group)
+
+
+
+
+#Younger:
+log <- capture.output({
+CPPslope_perm_Younger <- ezPerm(data = dplyr::filter(CPPslope_participant_level_long, Group=="Younger")
+                                  , dv = .(CPPslope)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the effect of Hemifield on CPPslope inside Younger group only:")
+print(CPPslope_perm_Younger);
+
+
+#Older:
+log <- capture.output({
+CPPslope_perm_Older <- ezPerm(data = filter(CPPslope_participant_level_long, Group=="Older")
+                                  , dv = .(CPPslope)
+                                  , wid = .(ID)
+                                  , within = .(Hemifield)
+                                  , perms = 1000
+)
+})
+print("Factorial Permutation test for the effect of Hemifield on CPPslope inside Older group only:")
+print(CPPslope_perm_Older)
+
+```
+
+
+
+#Look at multiple regression to predict RT_Asym 
+```{r, echo=FALSE, warning=FALSE}
+library(broom)
+
+### Fitting the Model
+intercept_only<-lm(RT_Asym~ 1, data=participant_level)
+Gender <- update(intercept_only, .~. + Gender)
+Group <- update(Gender, .~. + Group)
+N2c_Asym<-update(Group, .~. + N2c_Asym)
+N2c_latency_Asym<-update(N2c_Asym, .~. + N2c_latency_Asym)
+CPPonset_Asym<-update(N2c_latency_Asym, .~. + CPPonset_Asym)
+CPPslope_Asym<-update(CPPonset_Asym, .~. + CPPslope_Asym)
+Group_by_Gender<-update(CPPslope_Asym, .~. + Group*Gender)
+Group_by_N2c_Asym<-update(Group_by_Gender, .~. + Group*N2c_Asym)
+Group_by_N2c_latency_Asym<-update(Group_by_N2c_Asym, .~. + Group*N2c_latency_Asym)
+Group_by_CPPonset_Asym<-update(Group_by_N2c_latency_Asym, .~. + Group*CPPonset_Asym)
+Group_by_CPPslope_Asym<-update(Group_by_CPPonset_Asym, .~. + Group*CPPslope_Asym)
+
+
+
+anova(intercept_only, Gender, Group, N2c_Asym, N2c_latency_Asym, CPPonset_Asym, CPPslope_Asym,
+      Group_by_Gender, Group_by_N2c_Asym, Group_by_N2c_latency_Asym, Group_by_CPPonset_Asym, Group_by_CPPslope_Asym)
+
+
+summary(Gender)
+summary(Group)
+summary(N2c_Asym)
+summary(N2c_latency_Asym)
+summary(CPPonset_Asym)
+summary(CPPslope_Asym)
+
+
+#####################################################################################################
+
+```
+
+
+#Look at logistic regression to predict Group (Older vs Younger)  
+```{r, echo=FALSE, warning=FALSE}
+#Try logistic regression predicting Group (old vs young)
+
+###############################################
+# This section creates a function called      #
+# logisticPseudoR2s().  To use it             #
+# type logisticPseudoR2s(myLogisticModel)     #
+###############################################
+ logisticPseudoR2s <- function(LogModel) {
+	dev <- LogModel$deviance 
+	nullDev <- LogModel$null.deviance 
+	modelN <-  length(LogModel$fitted.values)
+	R.l <-  1 -  dev / nullDev
+	R.cs <- 1- exp ( -(nullDev - dev) / modelN)
+	R.n <- R.cs / ( 1 - ( exp (-(nullDev / modelN))))
+	cat("Pseudo R^2 for logistic regression\n")
+	cat("Hosmer and Lemeshow R^2  ", round(R.l, 3), "\n")
+	cat("Cox and Snell R^2        ", round(R.cs, 3), "\n")
+	cat("Nagelkerke R^2           ", round(R.n, 3),    "\n")
+      }
+############End of function ######################
+intercept_only<-glm(Group~ 1, data=participant_level, family = binomial())
+RT_Asym<-update(intercept_only, .~. + RT_Asym)
+CPPonset_Asym<-update(RT_Asym, .~. + CPPonset_Asym)
+N2c_latency_Asym<-update(CPPonset_Asym, .~. + N2c_latency_Asym)
+N2c_Asym<-update(N2c_latency_Asym, .~. + N2c_Asym)
+CPPslope_Asym<-update(N2c_Asym, .~. + CPPslope_Asym)
+
+kable(tidy((CPPslope_Asym)))
+
+
+#compare model1 and model 5
+modelChi <- intercept_only$deviance - CPPslope_Asym$deviance
+chidf <- intercept_only$df.residual - CPPslope_Asym$df.residual
+chisq.prob <- 1 - pchisq(modelChi, chidf)
+
+modelChi; 
+chidf; 
+chisq.prob
+
+
+#Compute R2 for model 5 (remember to execute the function code first)
+logisticPseudoR2s(CPPslope_Asym)
+
+#Compute odds ratios for model 5 
+exp(CPPslope_Asym$coefficients)
+exp(confint(CPPslope_Asym))
+
+
+
+#Test the overall effect off all the Asym predictors 
+require(aod)
+wald.test(b = coef(CPPslope_Asym), Sigma = vcov(CPPslope_Asym), Terms = 2:5)
+
+
+
+
+ggplot(participant_level, aes(x=RT_Asym, y=N2c_Asym, colour=Group)) +
+    geom_point(size=3) +    
+    geom_smooth(method=lm, se=FALSE) +
+    geom_hline(yintercept=0, alpha=0.5) + 
+    geom_vline(xintercept=0, alpha=0.5) #add black likes at 0 on x and y axis 
+
+
+ggplot(participant_level, aes(x=RT_Asym, y=CPPonset_Asym, colour=Group)) +
+    geom_point(size=3) +    
+    geom_smooth(method=lm, se=FALSE) +
+    geom_hline(yintercept=0, alpha=0.5) + 
+    geom_vline(xintercept=0, alpha=0.5) #add black likes at 0 on x and y axis    
+
+
+
+ggplot(participant_level, aes(x=RT_Asym, y=N2c_latency_Asym, colour=Group)) +
+    geom_point(size=3) +    
+    geom_smooth(method=lm, se=FALSE) +
+    geom_hline(yintercept=0, alpha=0.5) + 
+    geom_vline(xintercept=0, alpha=0.5) #add black likes at 0 on x and y axis    
+
+
+ggplot(participant_level, aes(x=RT_Asym, y=CPPslope_Asym, colour=Group)) +
+    geom_point(size=3) +    
+    geom_smooth(method=lm, se=FALSE) +
+    geom_hline(yintercept=0, alpha=0.5) + 
+    geom_vline(xintercept=0, alpha=0.5) #add black likes at 0 on x and y axis  
+
+
+
+```
+
+
+
+####################################################################
+
+
+
+#Load Stim_locked_ERP data
+```{r, echo=FALSE, warning=FALSE}
+to_merge<-data %>% select(ID, ID_num, Trial, ITI, Hemifield, 
+                    MotionDirection, Accuracy, FixationBreak,
+                    Art_neg500_0, Art_neg100_100PR, RejectedTrial, RT)
+
+###### Import trial sample level data (500Hz):
+data_Stim_locked_ERP <- read.csv("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/master_matrix_R_Stim_locked_ERP_Healthy.csv", header=FALSE)
+
+
+
+#Rename data_Stim_locked_ERP columns:
+data_Stim_locked_ERP <- data_Stim_locked_ERP %>% #Rename data columns:
+        rename(., 
+                ID_num=V1,
+               Group=V2,
+               TotalTrialNumber=V3,
+               Trial=V4,
+               PupilDiameter=V5,
+               CPP=V6,
+               TargetSide=V7,
+               N2c=V8,N2i=V9,
+               Time=V10,
+               CPP_CSD=V11,
+               N2c_CSD=V12,
+               N2i_CSD=V13) %>% 
+        left_join(., to_merge, by=c("ID_num", "Trial")) %>%
+        mutate(Group= ifelse(Group==1, "Younger", "Older"))  %>% #next make the required columns into factors:
+        mutate_each_(funs(factor), c("Group", "ID")) %>%#next Order any ordinal factors
+        mutate(ITI= ordered(ITI)) %>%
+        filter(!RejectedTrial & RT<1500 & RT>200 & Time>-200 & Time<1100) 
+
+#load some functions I will use below
+source("summarySE.R") 
+source("summarySEwithin.R") #function to calculate Std.Er of mean
+source("normDataWithin.R")
+```
+
+
+
+#plots - No CSD transform
+```{r, echo=FALSE, warning=FALSE}
+
+#CPP
+
+data_Stim_locked_ERP %>% 
+    filter(!FixationBreak, !Art_neg100_100PR, Accuracy=="Hit") %>%
+    summarySEwithin(., measurevar="CPP", 
+                      betweenvars=c("Group"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar="ID") %>% 
+    mutate(Time = as.numeric(as.character(Time))) %>%
+    ggplot(., aes(x=Time, y=CPP, color=Hemifield, fill=Hemifield, linetype=Group)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP-se, ymax=CPP+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-1, 6),  xlim = c(-100, 1000)) +
+    xlab("Time") + ylab("CPP (\u00b5V)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black"))
+    
+
+
+
+data_Stim_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., measurevar="CPP", 
+                      betweenvars=c("ID"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar=NULL) %>% 
+    mutate(Time = as.numeric(as.character(Time))) %>%
+    ggplot(., aes(x=Time, y=CPP, color=Hemifield,fill=Hemifield)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP-se, ymax=CPP+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(xlim = c(-100, 1000)) +
+    xlab("Time") + ylab("CPP (\u00b5V)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+    facet_wrap(~ ID, scales="free_y")
+
+
+##################################################################################################
+
+
+#N2c
+
+plotdata_N2c <-  data_Stim_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., 
+                      measurevar="N2c", 
+                      betweenvars=c("Group"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar="ID") %>% 
+    mutate(Time = as.numeric(as.character(Time)))
+
+
+ggplot(plotdata_N2c, aes(x=Time, y=N2c, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) +
+    geom_ribbon(aes(ymin=N2c-se, ymax=N2c+se), alpha = 0.3, colour=NA) +
+    geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +
+    coord_cartesian(ylim = c(-5, 1), xlim = c(-100, 500)) +
+    xlab("Time(ms)") + ylab("N2c (\u00b5V)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Group) +
+    theme(panel.margin = unit(2, "lines"))
+
+
+#N2i
+plotdata_N2i <-  data_Stim_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., 
+                      measurevar="N2i", 
+                      betweenvars=c("Group"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar="ID") %>% 
+    mutate(Time = as.numeric(as.character(Time)))
+
+ggplot(plotdata_N2i, aes(x=Time, y=N2i, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) +
+    geom_ribbon(aes(ymin=N2i-se, ymax=N2i+se), alpha = 0.2, colour=NA) +
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +
+    coord_cartesian(ylim = c(-4, 1), xlim = c(-100, 500)) +
+    xlab("Time (ms)") + ylab("N2i (\u00b5V)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Group) +
+    theme(panel.margin = unit(2, "lines"))
+
+
+
+###################Plot N2c and N2i trace in the same plot #####################
+plotdata_N2i$Hemisphere<-rep("Ipsilateral",length(plotdata_N2i[,1]))
+names(plotdata_N2i)[names(plotdata_N2i)=="N2i"] <- "N2"
+names(plotdata_N2i)[names(plotdata_N2i)=="N2i_norm"] <- "N2_norm"
+
+plotdata_N2c$Hemisphere<-rep("Contralateral",length(plotdata_N2c[,1]))
+names(plotdata_N2c)[names(plotdata_N2c)=="N2c"] <- "N2"
+names(plotdata_N2c)[names(plotdata_N2c)=="N2c_norm"] <- "N2_norm"
+plotdata_N2<-rbind(plotdata_N2i,plotdata_N2c)
+
+
+#facet_wrap(~ Group)
+ggplot(plotdata_N2, aes(x=Time, y=N2, color=Hemifield,fill=Hemifield, linetype=Hemisphere)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=N2-se, ymax=N2+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-5, 1), xlim = c(-100, 500)) +
+    xlab("Time (ms)") + ylab("N2 (\u00b5V)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Group) +
+    theme(panel.margin = unit(1.5, "lines"))
+
+# save(StimLockedN2_Plot_Group, file="StimLockedN2_Plot_Group.gg")
+
+
+#  facet_wrap(~ Hemisphere)
+ggplot(plotdata_N2, aes(x=Time, y=N2, color=Hemifield,fill=Hemifield, linetype=Group)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=N2-se, ymax=N2+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-5, 1), xlim = c(-100, 500)) +
+    xlab("Time (ms)") + ylab("N2 (\u00b5V)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Hemisphere) +
+    theme(panel.margin = unit(1.5, "lines"))
+
+# save(StimLockedN2_Plot_Hemisphere, file="StimLockedN2_Plot_Hemisphere.gg")
+
+#####################
+#Megan you can uncomment these if you want a plot for every participant:
+
+#N2c
+# plotdata_N2c <-  data_Stim_locked_ERP %>% 
+#     filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+#     summarySEwithin(., 
+#                       measurevar="N2c", 
+#                       betweenvars=c("ID"), 
+#                       withinvars=c("Time", "Hemifield"), 
+#                       idvar=NULL) %>% 
+#     mutate(Time = as.numeric(as.character(Time)))
+
+
+# ggplot(plotdata_N2c, aes(x=Time, y=N2c, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) +
+#     geom_ribbon(aes(ymin=N2c-se, ymax=N2c+se), alpha = 0.3, colour=NA) +
+#     geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +
+#     coord_cartesian(ylim = c(-5, 1), xlim = c(-100, 500)) +
+#     xlab("Time(ms)") + ylab("N2c (\u00b5V)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+#     theme(axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+#     theme(legend.title = element_text(size=11, face="bold")) +
+#     theme(legend.text = element_text(size = 11, face = "bold")) +
+#     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+#           panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+#     theme(panel.margin = unit(2, "lines")) +
+#     facet_wrap(~ ID, scales="free_y")
+
+
+#N2i
+# plotdata_N2i <-  data_Stim_locked_ERP %>% 
+#     filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+#     summarySEwithin(., 
+#                       measurevar="N2i", 
+#                       betweenvars=c("ID"), 
+#                       withinvars=c("Time", "Hemifield"), 
+#                       idvar=NULL) %>% 
+#     mutate(Time = as.numeric(as.character(Time)))
+
+# ggplot(plotdata_N2i, aes(x=Time, y=N2i, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) +
+#     geom_ribbon(aes(ymin=N2i-se, ymax=N2i+se), alpha = 0.2, colour=NA) +
+#         geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +
+#     coord_cartesian(xlim = c(-100, 500)) +
+#     xlab("Time (ms)") + ylab("N2i (\u00b5V)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+#     theme(axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+#     theme(legend.title = element_text(size=11, face="bold")) +
+#     theme(legend.text = element_text(size = 11, face = "bold")) +
+#     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+#           panel.background = element_blank(), axis.line = element_line(colour = "black")) + 
+#     theme(panel.margin = unit(2, "lines")) +
+#     facet_wrap(~ ID, scales="free_y")
+
+
+```
+
+
+#CSD transform applied:
+```{r}
+
+#CPP
+
+source("summarySEwithin.R")
+data_Stim_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., measurevar="CPP_CSD", 
+                      betweenvars=c("Group"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar="ID") %>% 
+    mutate(Time = as.numeric(as.character(Time))) %>%
+    ggplot(., aes(x=Time, y=CPP_CSD, color=Hemifield,fill=Hemifield, linetype=Group)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP_CSD-se, ymax=CPP_CSD+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(xlim = c(-100, 1000)) +
+    xlab("Time") + ylab("CPP (\u00b5V/m^2)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+
+
+# source("summarySEwithin.R")
+# data_Stim_locked_ERP %>% 
+#     filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+#     summarySEwithin(., measurevar="CPP_CSD", 
+#                       betweenvars=c("ID"), 
+#                       withinvars=c("Time", "Hemifield"), 
+#                       idvar=NULL) %>% 
+#     mutate(Time = as.numeric(as.character(Time))) %>%
+#     ggplot(., aes(x=Time, y=CPP_CSD, color=Hemifield,fill=Hemifield)) + 
+#     geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP_CSD-se, ymax=CPP_CSD+se), alpha = 0.3, colour=NA) + 
+#         geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+#     coord_cartesian(xlim = c(-100, 1000)) +
+#     xlab("Time") + ylab("CPP (\u00b5V/m^2)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+#     theme(axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+#     theme(legend.title = element_text(size=11, face="bold")) +
+#     theme(legend.text = element_text(size = 11, face = "bold")) +
+#     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+#     facet_wrap(~ ID, scales="free_y")
+# ggsave("CPP_AllParticipants.png")
+
+
+##################################################################################################
+
+
+#N2c
+
+plotdata_N2c_CSD <-  data_Stim_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., 
+                      measurevar="N2c_CSD", 
+                      betweenvars=c("Group"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar="ID") %>% 
+    mutate(Time = as.numeric(as.character(Time)))
+
+
+ggplot(plotdata_N2c_CSD, aes(x=Time, y=N2c_CSD, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) +
+    geom_ribbon(aes(ymin=N2c_CSD-se, ymax=N2c_CSD+se), alpha = 0.3, colour=NA) +
+    geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +
+    coord_cartesian( xlim = c(-100, 500)) +
+    xlab("Time(ms)") + ylab("N2c (\u00b5V/m^2)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Group) +
+    theme(panel.margin = unit(2, "lines"))
+
+
+#N2i_CSD
+plotdata_N2i_CSD <-  data_Stim_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., 
+                      measurevar="N2i_CSD", 
+                      betweenvars=c("Group"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar="ID") %>% 
+    mutate(Time = as.numeric(as.character(Time)))
+
+ggplot(plotdata_N2i_CSD, aes(x=Time, y=N2i_CSD, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) +
+    geom_ribbon(aes(ymin=N2i_CSD-se, ymax=N2i_CSD+se), alpha = 0.2, colour=NA) +
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +
+    coord_cartesian(xlim = c(-100, 500)) +
+    xlab("Time (ms)") + ylab("N2i (\u00b5V/m^2)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Group) +
+    theme(panel.margin = unit(2, "lines"))
+
+
+
+###################Plot N2c_CSD and N2i_CSD trace in the same plot #####################
+plotdata_N2i_CSD$Hemisphere<-rep("Ipsilateral",length(plotdata_N2i_CSD[,1]))
+names(plotdata_N2i_CSD)[names(plotdata_N2i_CSD)=="N2i_CSD"] <- "N2"
+names(plotdata_N2i_CSD)[names(plotdata_N2i_CSD)=="N2i_CSD_norm"] <- "N2_norm"
+
+plotdata_N2c_CSD$Hemisphere<-rep("Contralateral",length(plotdata_N2c_CSD[,1]))
+names(plotdata_N2c_CSD)[names(plotdata_N2c_CSD)=="N2c_CSD"] <- "N2"
+names(plotdata_N2c_CSD)[names(plotdata_N2c_CSD)=="N2c_CSD_norm"] <- "N2_norm"
+plotdata_N2<-rbind(plotdata_N2i_CSD,plotdata_N2c_CSD)
+
+
+#facet_wrap(~ Group)
+ggplot(plotdata_N2, aes(x=Time, y=N2, color=Hemifield,fill=Hemifield, linetype=Hemisphere)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=N2-se, ymax=N2+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(xlim = c(-100, 500)) +
+    xlab("Time (ms)") + ylab("N2 (\u00b5V/m^2)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Group) +
+    theme(panel.margin = unit(1.5, "lines"))
+
+# save(StimLockedN2_Plot_Group, file="StimLockedN2_Plot_Group.gg")
+
+
+#  facet_wrap(~ Hemisphere)
+ggplot(plotdata_N2, aes(x=Time, y=N2, color=Hemifield,fill=Hemifield, linetype=Group)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=N2-se, ymax=N2+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(xlim = c(-100, 500)) +
+    xlab("Time (ms)") + ylab("N2 (\u00b5V/m^2)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Hemisphere) +
+    theme(panel.margin = unit(1.5, "lines"))
+
+# save(StimLockedN2_Plot_Hemisphere, file="StimLockedN2_Plot_Hemisphere.gg")
+
+
+#N2c_CSD
+plotdata_N2c_CSD <-  data_Stim_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., 
+                      measurevar="N2c_CSD", 
+                      betweenvars=c("ID"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar=NULL) %>% 
+    mutate(Time = as.numeric(as.character(Time)))
+
+
+# ggplot(plotdata_N2c_CSD, aes(x=Time, y=N2c_CSD, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) +
+#     geom_ribbon(aes(ymin=N2c_CSD-se, ymax=N2c_CSD+se), alpha = 0.3, colour=NA) +
+#     geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +
+#     coord_cartesian( xlim = c(-100, 500)) +
+#     xlab("Time(ms)") + ylab("N2c (\u00b5V/m^2)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+#     theme(axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+#     theme(legend.title = element_text(size=11, face="bold")) +
+#     theme(legend.text = element_text(size = 11, face = "bold")) +
+#     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+#           panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+#     theme(panel.margin = unit(2, "lines")) +
+#     facet_wrap(~ ID, scales="free_y")
+# ggsave("N2c_AllParticipants.png")
+
+
+#N2i_CSD
+plotdata_N2i_CSD <-  data_Stim_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., 
+                      measurevar="N2i_CSD", 
+                      betweenvars=c("ID"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar=NULL) %>% 
+    mutate(Time = as.numeric(as.character(Time)))
+# 
+# p1<-ggplot(plotdata_N2i_CSD, aes(x=Time, y=N2i_CSD, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) +
+#     geom_ribbon(aes(ymin=N2i_CSD-se, ymax=N2i_CSD+se), alpha = 0.2, colour=NA) +
+#         geom_hline(yintercept=0, alpha = 0.5, size=1.4) + 
+#     geom_vline(xintercept=0, alpha = 0.5, size=1.4) +
+#     coord_cartesian(xlim = c(-100, 500)) +
+#     xlab("Time (ms)") + ylab("N2i (\u00b5V/m^2)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12),
+#           axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12),
+#           legend.title = element_text(size=11, face="bold"),
+#           legend.text = element_text(size = 11, face = "bold"),
+#           panel.grid.major = element_blank(), 
+#           panel.grid.minor = element_blank(),
+#           panel.background = element_blank(), 
+#           axis.line = element_line(colour = "black"),
+#           panel.margin = unit(2, "lines")) +
+#     facet_wrap(~ ID, scales="free_y")
+# ggsave("N2i_AllParticipants.png")
+# 
+# 
+
+```
+
+
+##Resp-locked CPP
+```{r}
+
+data_Resp_locked_ERP <- read.csv("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/master_matrix_R_Resp_locked_ERP_Healthy.csv", header=FALSE)
+
+
+data_Resp_locked_ERP<- data_Resp_locked_ERP %>% #Rename data columns:
+    rename(., 
+            ID_num=V1,
+           Group=V2,
+           TotalTrialNumber=V3,
+           Trial=V4,
+           PupilDiameter=V5,
+           CPP=V6,
+           TargetSide=V7,
+           N2c=V8,
+           N2i=V9,
+           Time=V10,
+           CPP_CSD=V11,
+           N2c_CSD=V12,
+           N2i_CSD=V13) %>% 
+    left_join(., to_merge, by=c("ID_num", "Trial")) %>%
+    mutate(Group= ifelse(Group==1, "Younger", "Older"))  %>% #next make the required columns into factors:
+    mutate_each_(funs(factor), c("Group", "ID")) %>%#next Order any ordinal factors
+    mutate(ITI= ordered(ITI))  %>%
+    filter(!RejectedTrial & RT<1500 & RT>200)
+
+
+#CPP
+
+source("summarySEwithin.R")
+data_Resp_locked_ERP %>% 
+    filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+    summarySEwithin(., measurevar="CPP", 
+                      betweenvars=c("Group"), 
+                      withinvars=c("Time", "Hemifield"), 
+                      idvar="ID") %>% 
+    mutate(Time = as.numeric(as.character(Time))) %>%
+    ggplot(., aes(x=Time, y=CPP, color=Hemifield,fill=Hemifield, linetype=Group)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP-se, ymax=CPP+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-3.5, 8),  xlim = c(-500, 100)) +
+    xlab("Time") + ylab("CPP (\u00b5V/m^2)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+
+
+# source("summarySEwithin.R")
+# data_Resp_locked_ERP %>%
+#     filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+#     summarySEwithin(., measurevar="CPP",
+#                       betweenvars=c("ID"),
+#                       withinvars=c("Time", "Hemifield"),
+#                       idvar=NULL) %>%
+#     mutate(Time = as.numeric(as.character(Time))) %>%
+#     ggplot(., aes(x=Time, y=CPP, color=Hemifield,fill=Hemifield)) +
+#     geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP-se, ymax=CPP+se), alpha = 0.3, colour=NA) +
+#         geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +
+#     coord_cartesian(xlim = c(-500, 100)) +
+#     xlab("Time") + ylab("CPP (\u00b5V/m^2)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+#     theme(axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+#     theme(legend.title = element_text(size=11, face="bold")) +
+#     theme(legend.text = element_text(size = 11, face = "bold")) +
+#     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+#           panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+#     facet_wrap(~ ID, scales="free_y")
+
+```
+
+
+#Test the ability of rolling mean N2 and CPP amplitude as well as rolling CPP-slope to predict RT:
+```{r, echo=FALSE, warning=FALSE}
+#Sort dataframe by Trial and Time then create new rolling mean and rolling slope variables "N2c_CSD_rollmean" , "CPP_CSD_rollSlope" etc
+data_Stim_locked_ERP2<-data_Stim_locked_ERP %>% 
+    filter(!FixationBreak, !Art_neg100_100PR, Accuracy=="Hit", RT<1500, RT>150, !-RejectedTrial) %>%
+    arrange(ID, Trial, Time) %>% 
+    group_by(ID, Trial) %>% 
+    mutate(N2c_CSD_rollmean = rollmean(x = N2c_CSD, k=50,  fill = NA),
+           N2i_CSD_rollmean = rollmean(x = N2i_CSD, k=50,  fill = NA), 
+           CPP_CSD_rollmean = rollmean(x = CPP_CSD, k=50,  fill = NA),
+           xyBar =            rollmean(Time*CPP_CSD,k=50,  fill = NA),
+           xBar =             rollmean(Time,        k=50,  fill = NA),
+           yBar =             rollmean(CPP_CSD,     k=50,  fill = NA),
+           x2Bar =            rollmean(Time^2,      k=50,  fill = NA),
+           CPP_CSD_rollSlope = (xyBar - xBar*yBar) / (x2Bar - xBar^2)) 
+
+
+##Calculate t_values for each of the rolling variables ability to predict log(RT) at each time point
+plot_data<-data_Stim_locked_ERP2 %>% 
+            filter(Time>-100, Time<1000) %>% 
+            group_by(Hemifield, Time) %>%  
+            do(N2c_Amplitude = summary(lmer(log(RT) ~ N2c_CSD_rollmean + (1|ID) + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+               N2i_Amplitude = summary(lmer(log(RT) ~ N2i_CSD_rollmean + (1|ID) + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+               CPP_Amplitude = summary(lmer(log(RT) ~ CPP_CSD_rollmean + (1|ID) + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+               CPP_Slope =     summary(lmer(log(RT) ~ CPP_CSD_rollSlope +(1|ID) + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3]) %>%
+            gather(., key, t_value, -Hemifield, -Time) %>%
+            mutate(t_value= as.double(t_value)) %>% 
+            arrange(key)
+
+
+
+#Plot ability to predict log(RT) at each time point
+png("All_Participants_model.png",  width = 10*600, height = 10*600, units = "px", res = 600)
+ggplot(plot_data, aes(Time, t_value, colour=Hemifield)) + geom_line(size=1.4) + 
+    geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+     coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 1000)) +
+    theme(axis.title.x = element_text(face="bold", size=14),
+          axis.text.x  = element_text(face="bold", angle=0,  size=14)) +
+    theme(axis.title.y = element_text(face="bold", size=14),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=14)) +
+    theme(plot.title = element_text(face="bold", size=16)) +
+    theme(strip.text.x = element_text(size = 13)) +
+    ggtitle("Signal's relationship with forthcoming RT \n (t-values over +/- 2 are significant)") +
+    facet_wrap(~key)
+dev.off()    
+
+###Run the modle for each group (old vs young)
+
+#SPLIT  BY PARTICIPANT Group:
+##Calculate t_values for each of the rolling variables ability to predict log(RT) at each time point
+plot_data_by_Group<-data_Stim_locked_ERP2 %>% 
+  filter(Time>-100, Time<1000) %>% 
+  group_by(Group, Hemifield, Time) %>%  
+  do(N2c_Amplitude = summary(lmer(log(RT) ~ N2c_CSD_rollmean  + (1|ID) + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+     N2i_Amplitude = summary(lmer(log(RT) ~ N2i_CSD_rollmean  + (1|ID) + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+     CPP_Amplitude = summary(lmer(log(RT) ~ CPP_CSD_rollmean  + (1|ID) + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+     CPP_Slope =     summary(lmer(log(RT) ~ CPP_CSD_rollSlope + (1|ID) + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3]) %>%
+  gather(., key, t_value, -Group, -Hemifield, -Time) %>%
+  mutate(t_value= as.double(t_value)) %>% 
+  arrange(key)
+
+
+#Save to the working directory, t-value plots for each erp component for each participant: 
+plot_data_by_Group %>%
+  group_by(Group, key) %>%
+  do({
+    p <- ggplot(., aes(Time, t_value, colour=Hemifield)) + 
+      geom_line(size=1.4) + 
+      geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + 
+      geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + 
+      geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+      coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 1000)) +
+      ggtitle(paste0(" ", unique(.$Group)," ", unique(.$key)))
+    ggsave(p, filename=paste0(unique(.$Group), unique(.$key),"_t-values.png"), width = 21, height = 7)
+  })
+
+
+ggplot(plot_data, aes(Time, t_value, colour=Hemifield)) + geom_line(size=1.4) + 
+  geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+  coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 1000)) +
+  theme(axis.title.x = element_text(face="bold", size=14),
+        axis.text.x  = element_text(face="bold", angle=0,  size=14)) +
+  theme(axis.title.y = element_text(face="bold", size=14),
+        axis.text.y  = element_text(angle=0, vjust=0.5, size=14)) +
+  theme(plot.title = element_text(face="bold", size=16)) +
+  theme(strip.text.x = element_text(size = 13)) +
+  ggtitle("Signal's relationship with forthcoming RT \n (t-values over +/- 2 are significant)") +
+  facet_wrap(~key)
+
+### Now run it for each individual participant
+
+#SPLIT  BY PARTICIPANT (ID):
+##Calculate t_values for each of the rolling variables ability to predict log(RT) at each time point
+# plot_data_by_ID<-data_Stim_locked_ERP2 %>% 
+#                 filter(Time>-100, Time<1000) %>% 
+#                 group_by(ID, Hemifield, Time) %>%  
+#                 do(N2c_Amplitude = summary(lmer(log(RT) ~ N2c_CSD_rollmean  + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+#                    N2i_Amplitude = summary(lmer(log(RT) ~ N2i_CSD_rollmean  + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+#                    CPP_Amplitude = summary(lmer(log(RT) ~ CPP_CSD_rollmean  + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3],
+#                    CPP_Slope =     summary(lmer(log(RT) ~ CPP_CSD_rollSlope + (1|ITI) + (1|MotionDirection), data = ., REML=F))$coefficients[2,3]) %>%
+#                 gather(., key, t_value, -ID, -Hemifield, -Time) %>%
+#                 mutate(t_value= as.double(t_value)) %>% 
+#                 arrange(key)
+# 
+# 
+# #Save to the working directory, t-value plots for each erp component for each participant: 
+# plot_data_by_ID %>%
+#   group_by(ID, key) %>%
+#   do({
+#       p <- ggplot(., aes(Time, t_value, colour=Hemifield)) + 
+#             geom_line(size=1.4) + 
+#             geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + 
+#             geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + 
+#             geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+#             coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 1000)) +
+#            ggtitle(paste0(" ", unique(.$ID)," ", unique(.$key)))
+#       ggsave(p, filename=paste0(unique(.$ID), unique(.$key),"_t-values.png"), width = 21, height = 7)
+#      })
+# 
+# 
+# ggplot(plot_data, aes(Time, t_value, colour=Hemifield)) + geom_line(size=1.4) + 
+#     geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+#      coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 1000)) +
+#     theme(axis.title.x = element_text(face="bold", size=14),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=14)) +
+#     theme(axis.title.y = element_text(face="bold", size=14),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=14)) +
+#     theme(plot.title = element_text(face="bold", size=16)) +
+#     theme(strip.text.x = element_text(size = 13)) +
+#     ggtitle("Signal's relationship with forthcoming RT \n (t-values over +/- 2 are significant)") +
+#     facet_wrap(~key)
+
+```
+
+
+
+
+```{r}
+# p1 <- data %>% 
+#     filter(Group=="Younger") %>%
+#     summarySEwithin(., measurevar="RT", 
+#                     withinvars=c("Hemifield"), 
+#                     idvar="ID") %>%
+#     ggplot(., aes(x=Hemifield, y=RT, fill=Hemifield)) +
+#     geom_bar(position=position_dodge(.9), colour="Black", stat="identity") + 
+#     geom_errorbar(position=position_dodge(.9), width=.3, aes(ymin=RT-ci, ymax=RT+ci)) + #can change "se" to "ci" if I want to use 95%ci instead
+#     geom_hline(yintercept=0) +  coord_cartesian(ylim = c(400, 700)) +
+#     xlab("Hemifield") + ylab("RT (ms)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+#     theme(axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+#     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), axis.line = element_line(colour = "black")) + theme(legend.position="none") +
+#      ggtitle("A") + 
+#      theme(plot.title = element_text(lineheight=.8, face="bold"))
+# 
+# 
+# #N2c_CSD 
+# p2<-data_Stim_locked_ERP %>% 
+#     filter(!FixationBreak, !Art_neg100_100PR, Accuracy=="Hit") %>%
+#     summarySEwithin(., measurevar="N2c_CSD", 
+#                       betweenvars=c("Group"), 
+#                       withinvars=c("Time", "Hemifield"), 
+#                       idvar="ID") %>% 
+#     mutate(Time = as.numeric(as.character(Time))) %>%
+#     ggplot(., aes(x=Time, y=N2c_CSD, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) + 
+#     geom_ribbon(aes(ymin=N2c_CSD-se, ymax=N2c_CSD+se), alpha = 0.3, colour=NA) +
+#     geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+#     coord_cartesian(xlim = c(-100, 500)) +
+#     xlab("Time (ms)") + ylab("N2c (uV/m^2)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12),
+#           axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12),
+#           panel.grid.major = element_blank(), 
+#           panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), 
+#           axis.line = element_line(colour = "black"),
+#           legend.position="none") +
+#      ggtitle("B") + 
+#      theme(plot.title = element_text(lineheight=.8, face="bold"))
+# 
+# 
+# #N2i_CSD 
+# p3<-data_Stim_locked_ERP %>% 
+#     filter(!FixationBreak, !Art_neg100_100PR, Accuracy=="Hit") %>%
+#     summarySEwithin(., measurevar="N2i_CSD", 
+#                       betweenvars=c("Group"), 
+#                       withinvars=c("Time", "Hemifield"), 
+#                       idvar="ID") %>% 
+#     mutate(Time = as.numeric(as.character(Time))) %>%
+#     ggplot(., aes(x=Time, y=N2i_CSD, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) + 
+#     geom_ribbon(aes(ymin=N2i_CSD-se, ymax=N2i_CSD+se), alpha = 0.3, colour=NA) +
+#     geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+#     coord_cartesian(xlim = c(-100, 500)) +
+#     xlab("Time (ms)") + ylab("N2i (uV/m^2)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12),
+#           axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12),
+#           panel.grid.major = element_blank(), 
+#           panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), 
+#           axis.line = element_line(colour = "black"),
+#           legend.position="none") +
+#     ggtitle("C") + 
+#     theme(plot.title = element_text(lineheight=.8, face="bold"))
+#     
+# #N2c_CSD by group
+# p4<-data_Stim_locked_ERP %>% 
+#     filter(!FixationBreak & !Art_neg100_100PR & Accuracy=="Hit") %>%
+#     summarySEwithin(., measurevar="CPP_CSD", 
+#                       betweenvars=c("Group"), 
+#                       withinvars=c("Time", "Hemifield"), 
+#                       idvar="ID") %>% 
+#     mutate(Time = as.numeric(as.character(Time))) %>%
+#     ggplot(., aes(x=Time, y=CPP_CSD, color=Hemifield,fill=Hemifield)) + 
+#     geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP_CSD-se, ymax=CPP_CSD+se), alpha = 0.3, colour=NA) + 
+#         geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+#     coord_cartesian(  xlim = c(-100, 650 )) +
+#     xlab("Time (ms)") + ylab("CPP (uV/m^2)") +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12),
+#           axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12),
+#           panel.grid.major = element_blank(), 
+#           panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), 
+#           axis.line = element_line(colour = "black"),
+#           legend.position="none") +
+#      ggtitle("D") + 
+#      theme(plot.title = element_text(lineheight=.8, face="bold")) +
+#      geom_vline(xintercept=plotdata$RT[plotdata$Hemifield=="Right"], colour  = scales::hue_pal()(2)[2], size=1.2,  linetype="dashed") +
+#      geom_vline(xintercept=plotdata$RT[plotdata$Hemifield=="Left"], colour  = scales::hue_pal()(1), size=1.2,  linetype="dashed") 
+# 
+# 
+# p1
+# p2
+# p3
+# p4
+# 
+# multiplot(p1,p2,p3,p4,cols=4)
+# 
+# png("Younger Figure.png",  width = 10*600, height = 10*200, units = "px", res = 600)
+# source("multiplot.R")
+# multiplot(p1,p2,p3,p4,cols=4)
+# #save the .png
+# dev.off()
+# 
+# 
+# 
+# p_1<-plot_data_group %>% 
+#     filter(key=="N2c_Amplitude") %>%  
+#     ggplot(., aes(Time, t_value, colour=Hemifield)) + 
+#     geom_line(size=1.4) + 
+#     geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + 
+#     geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + 
+#     geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+#     coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 500)) +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12),
+#           axis.title.y = element_text(face="bold", size=12),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12),
+#           panel.grid.major = element_blank(), 
+#           panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), 
+#           axis.line = element_line(colour = "black"),
+#           legend.position="none") +
+#      ggtitle("N2c amplitude's \n relationship with \n forthcoming RT") 
+# 
+# 
+# p_2<-plot_data_group %>% 
+#     filter(key=="N2i_Amplitude") %>%  
+#     ggplot(., aes(Time, t_value, colour=Hemifield)) + 
+#     geom_line(size=1.4) + 
+#     geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + 
+#     geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + 
+#     geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+#     coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 500)) +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12),
+#           axis.title.y = element_blank(),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12),
+#           panel.grid.major = element_blank(), 
+#           panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), 
+#           axis.line = element_line(colour = "black"),
+#           legend.position="none") +
+#      ggtitle("N2i amplitude's \n relationship with \n forthcoming RT")
+# 
+# 
+# p_3<-plot_data_group %>% 
+#     filter(key=="CPP_Amplitude") %>%  
+#     ggplot(., aes(Time, t_value, colour=Hemifield)) + 
+#     geom_line(size=1.4) + 
+#     geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + 
+#     geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + 
+#     geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+#     coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 650)) +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12),
+#           axis.title.y = element_blank(),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12),
+#           panel.grid.major = element_blank(), 
+#           panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), 
+#           axis.line = element_line(colour = "black"),
+#           legend.position="none") +
+#      ggtitle("CPP amplitude's \n relationship with \n forthcoming RT")
+# 
+# p_4<-plot_data_group %>% 
+#     filter(key=="CPP_Slope") %>%  
+#     ggplot(., aes(Time, t_value, colour=Hemifield)) + 
+#     geom_line(size=1.4) + 
+#     geom_hline(yintercept=2, alpha = 0.5,  size=1.4) + 
+#     geom_hline(yintercept=-2, alpha = 0.5,  size=1.4) + 
+#     geom_vline(xintercept=0, alpha = 0.5,  size=1.4) +
+#     coord_cartesian(ylim = c(-5, 5), xlim = c(-100, 650)) +
+#     theme(axis.title.x = element_text(face="bold", size=12),
+#           axis.text.x  = element_text(face="bold", angle=0,  size=12),
+#           axis.title.y = element_blank(),
+#           axis.text.y  = element_text(angle=0, vjust=0.5, size=12),
+#           panel.grid.major = element_blank(), 
+#           panel.grid.minor = element_blank(), 
+#           panel.background = element_blank(), 
+#           axis.line = element_line(colour = "black"),
+#           legend.position="none") +
+#      ggtitle("CPP slope's \n relationship with \n forthcoming RT")
+# 
+# 
+# png("Younger Grant Figure2.png",  width = 10*600, height = 10*200, units = "px", res = 600)
+# source("multiplot.R")
+# multiplot(p_1,p_2,p_3,p_4,cols=4)
+# #save the .png
+# dev.off()
+```

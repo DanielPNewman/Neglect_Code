@@ -1,0 +1,359 @@
+---
+title: "Plots_for_Neglect_Grant"
+author: "Daniel Newman"
+date: "4 July 2016"
+output:
+  html_document:
+    fig_width: 8
+    keep_md: yes
+  word_document: default
+---
+
+
+```{r Load and Pre-Process the single trial data_Stim_locked_ERP, echo=FALSE, include=FALSE}
+
+####Which computer/directory is this being run on?
+location<-"Monash"
+# location<-"DansLaptop"
+
+if (location=="Monash") {
+    setwd(("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_R"))
+} else if (location=="DansLaptop") {
+    setwd(("C:/Users/Dan/Documents/GitHub/NeglectvsControl/Analyses Scripts_R"))
+} else setwd(("~"))
+
+
+# install.packages(c("MASS", "akima", "robustbase", "cobs", "robust", "scatterplot3d", "quantreg", "rrcov", "lars", "pwr", "trimcluster", "mc2d", "psych", "Rfit","MBESS", "BayesFactor", "PoweR", "ggplot2", "reshape2", "plyr", "devtools", "rmarkdown","gmodels", "HLMdiag", "car", "gridExtra", "bootES", "BEST","foreign","nlme","pastecs","multcomp","ggplot2","compute.es","ez","lattice","lme4","effects","diagram","png", "grid","lmerTest", "LMERConvenienceFunctions", "dplyr", "tidyr", "stringr","lubridate", "readr", "readxl", "haven", "httr", "rvest", "xml2", "devtools", "roxygen2", "testthat"))
+
+
+
+## Install relevant libraries 
+library(foreign)
+library(car)
+library(nlme)
+library(ggplot2)
+library(pastecs)
+library(psych)
+library(plyr)
+library(multcomp)
+library(reshape2)
+library(compute.es)
+library(ez)
+library(lattice)
+library(lme4)
+library(png)
+library(grid)
+library(TTR)
+
+
+
+###### Import trial level data:
+if (location=="Monash") {
+data <- read.csv("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/master_matrix_R_Neglect.csv", header=FALSE)
+} else if (location=="DansLaptop") {
+data <- read.csv("C:/Users/Dan/Documents/GitHub/Neglect/Analyses Scripts_Matlab/master_matrix_R_Neglect.csv", header=FALSE)
+} else setwd(("~"))
+#Import IDs:
+if (location=="Monash") {
+ID <- read.table("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/ID_vector_Neglect.csv", quote="\"")
+} else if (location=="DansLaptop") {
+ID <- read.table("C:/Users/Dan/Documents/GitHub/NeglectvsControl/Analyses Scripts_Matlab/ID_vector_Neglect.csv", quote="\"")
+} else setwd(("~"))
+
+#Save a column called ID_num to use to merge with data_Stim_locked_ERP below
+data$ID_num<-data$V1
+
+data$ID<-data[,1]
+#Replace the participant numbers with IDs:
+data[,1]<-ID[,1]
+#Remove the seperate ID vector now it has been included into data dataframe
+rm(ID)
+drops <- c("ID")
+data<-data[,!(names(data) %in% drops)]
+#Rename data columns:
+data<-rename(data, c("V1"="ID", "V2"="ResponseMapping","V3"="TotalTrialNumber","V4"="Trial","V5"="ITI",
+                     "V6"="Hemifield","V7"="MotionDirection","V8"="RespLR",
+                     "V9"="Accuracy","V10"="FixationBreak","V11"="Art_neg500_0",
+                     "V12"="Art_neg100_100PR","V13"="RejectedTrial","V14"="Threshold_cohLevel",
+                     "V15"="RT","V29"="Group"))   
+##Only keep the first 15 columns, plus the ID_num column (i.e. dim(data)[2])), kick out the rest
+data<-dplyr::select(data, c(1:15), Group, ID_num)
+             
+#Make the required columns into factors:
+data$ITI <- factor(data$ITI)
+data$Hemifield <- factor(data$Hemifield)
+data$Accuracy <- factor(data$Accuracy)
+data$Group<-factor(data$Group)
+#Rename factor Levels:
+data$Hemifield <- revalue(data$Hemifield, c("1"="Left", "2"="Right"))
+data$Accuracy <- revalue(data$Accuracy, c("1"="Hit", "0"="Miss"))
+#Re-class required vectors into Logicals:
+data$Art_neg500_0<-as.logical(data$Art_neg500_0)
+data$Art_neg100_100PR<-as.logical(data$Art_neg100_100PR)
+data$FixationBreak<-as.logical(data$FixationBreak)
+data$RejectedTrial<-as.logical(data$RejectedTrial)
+
+
+###### Import trial sample level data (500Hz):
+if (location=="Monash") {
+data_Stim_locked_ERP <- read.csv("S:/R-MNHS-SPP/Bellgrove-data/11.Megan_ONeill/Analysis Scripts_Matlab/master_matrix_R_Stim_locked_ERP_Neglect.csv", header=FALSE)
+} else if (location=="DansLaptop") {
+data_Stim_locked_ERP <- read.csv("C:/Users/Dan/Documents/GitHub/Neglect/Analyses Scripts_Matlab/master_matrix_R_Stim_locked_ERP_Neglect.csv", header=FALSE)
+} else setwd(("~"))
+
+
+###############Data Cleaning For Single Trial Data######################
+#Rename data_Stim_locked_ERP columns:
+data_Stim_locked_ERP<-rename(data_Stim_locked_ERP, c("V1"="ID_num", "V2"="Group","V3"="TotalTrialNumber","V4"="Trial","V5"="PupilDiameter",
+                     "V6"="CPP","V7"="TargetSide","V8"="N2c","V9"="N2i","V10"="Time", "V11"="CPP_CSD", "V12"="N2c_CSD", "V13"="N2i_CSD")) 
+
+# data_Stim_locked_ERP$ID<-"HN003"
+
+#Merge  data_Stim_locked_ERP and data
+data_Stim_locked_ERP <- merge(data_Stim_locked_ERP, data, by.x = c("ID_num", "Trial"), by.y = c("ID_num", "Trial"))
+
+#Make the required columns into factors:
+data_Stim_locked_ERP$Group <- factor(data_Stim_locked_ERP$Group)
+data_Stim_locked_ERP$ITI <- factor(data_Stim_locked_ERP$ITI)
+data_Stim_locked_ERP$Hemifield <- factor(data_Stim_locked_ERP$Hemifield)
+# data_Stim_locked_ERP$Trial <- factor(data_Stim_locked_ERP$Trial)
+data_Stim_locked_ERP$Accuracy <- factor(data_Stim_locked_ERP$Accuracy)
+# data_Stim_locked_ERP$Time <- factor(data_Stim_locked_ERP$Time)
+
+#Re-class required vectors into Logicals:
+data_Stim_locked_ERP$FixationBreak<-as.logical(data_Stim_locked_ERP$FixationBreak)
+data_Stim_locked_ERP$Art_neg500_0<-as.logical(data_Stim_locked_ERP$Art_neg500_0)
+data_Stim_locked_ERP$Art_neg100_100PR<-as.logical(data_Stim_locked_ERP$Art_neg100_100PR)
+data_Stim_locked_ERP$RejectedTrial<-as.logical(data_Stim_locked_ERP$RejectedTrial)
+
+#Rename factor Levels:
+data_Stim_locked_ERP$Group <- revalue(data_Stim_locked_ERP$Group, c("1"="Neglect", "2"="Control"))
+                     
+#Order any ordinal factors :
+data_Stim_locked_ERP$ITI <- ordered(data_Stim_locked_ERP$ITI)  
+
+
+###############Data Cleaning For Single Trial data_Stim_locked_ERP######################
+
+##Remove rejected trials...
+#with trigger conflicts 
+#where RT longer than 1000ms (i.e. after target finished)
+#where RT faster than 100ms (i.e. too fast must be false alarm, or the did not respond so RT=0)
+data_Stim_locked_ERP<-dplyr::filter(data_Stim_locked_ERP, !RejectedTrial & RT<1500 & RT>200)
+#Remove trials with missing values :
+data_Stim_locked_ERP<-data_Stim_locked_ERP[complete.cases(data_Stim_locked_ERP),] 
+
+#Get rid of the samples at the start and end of the epoch which we don't need
+data_Stim_locked_ERP<-dplyr::filter(data_Stim_locked_ERP, Time>-100 & Time<1000)
+
+#Load some local functions for plotting
+source("summarySE.R") 
+source("summarySEwithin.R") #function to calculate Std.Er of mean
+source("normDataWithin.R")
+```
+
+#RT
+```{r, echo=FALSE, warning=FALSE}
+#Remove trials with missing values :
+data<-data[complete.cases(data),] 
+##Remove rejected trials...
+#with trigger conflicts 
+#where RT longer than 1000ms (i.e. after target finished)
+#where RT faster than 100ms (i.e. too fast must be false alarm, or the did not respond so RT=0)
+data<-dplyr::filter(data, !RejectedTrial & RT<1500 & RT>200)
+
+#
+plotdata <- summarySEwithin(data, measurevar="RT", withinvars=c("Hemifield"), betweenvars="Group", idvar="ID")
+ggplot(plotdata, aes(x=Group, y=RT, fill=Hemifield)) +
+    geom_bar(position=position_dodge(.9), colour="Black", stat="identity") + 
+    geom_errorbar(position=position_dodge(.9), width=.3, aes(ymin=RT-ci, ymax=RT+ci)) + #can change "se" to "ci" if I want to use 95%ci instead
+    geom_hline(yintercept=0) +  coord_cartesian(ylim = c(700, 900)) +
+    xlab("Hemifield") + ylab("RT (ms)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) 
+
+
+```
+
+
+#N2 
+
+###CSD transform applied:
+
+```{r, echo=FALSE, warning=FALSE}
+
+
+#N2
+data_Stim_locked_ERP2<-data_Stim_locked_ERP[!data_Stim_locked_ERP$FixationBreak & !data_Stim_locked_ERP$Art_neg100_100PR, ]
+data_Stim_locked_ERP2<-data_Stim_locked_ERP2[data_Stim_locked_ERP2$Accuracy=="Hit",]
+
+
+#N2c_CSD  facet wrap by group
+plotdata_N2c_CSD <- summarySEwithin(data_Stim_locked_ERP2, measurevar="N2c_CSD", betweenvars=c("Group"), withinvars=c("Time", "Hemifield"), idvar="ID")
+plotdata_N2c_CSD$Time<-as.numeric(as.character(plotdata_N2c_CSD$Time))
+summary(plotdata_N2c_CSD$Time)
+
+#CPP Group on same plot
+ggplot(plotdata_N2c_CSD, aes(x=Time, y=N2c_CSD, color=Hemifield,fill=Hemifield, linetype=Group)) + geom_line(size=1.4) + 
+    geom_ribbon(aes(ymin=N2c_CSD-se, ymax=N2c_CSD+se), alpha = 0.3, colour=NA) +
+    geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-50, 10), xlim = c(-100, 500)) +
+    xlab("Time(ms)") + ylab("N2c") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) 
+    theme(panel.margin = unit(2, "lines"))
+
+
+
+#CPP Group different plots
+ggplot(plotdata_N2c_CSD, aes(x=Time, y=N2c_CSD, color=Hemifield,fill=Hemifield)) + geom_line(size=1.4) + 
+    geom_ribbon(aes(ymin=N2c_CSD-se, ymax=N2c_CSD+se), alpha = 0.3, colour=NA) +
+    geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-50, 10), xlim = c(-100, 500)) +
+    xlab("Time(ms)") + ylab("N2c") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~ Group) +
+    theme(panel.margin = unit(2, "lines"))
+
+```
+
+
+#CPP
+
+###CSD transform applied:
+
+```{r, echo=FALSE, warning=FALSE}
+##Try CSD transformed 
+plotdata_CPP_CSD <- summarySEwithin(data_Stim_locked_ERP2, measurevar="CPP_CSD", betweenvars=c("Group"), withinvars=c("Time", "Hemifield"), idvar="ID")
+plotdata_CPP_CSD$Time<-as.numeric(as.character(plotdata_CPP_CSD$Time))
+summary(plotdata_CPP_CSD$Time)
+
+#CPP Group on same plot
+ggplot(plotdata_CPP_CSD, aes(x=Time, y=CPP_CSD, color=Hemifield,fill=Hemifield, linetype=Group)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP_CSD-se, ymax=CPP_CSD+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-4, 38),  xlim = c(-100, 1000 )) +
+    xlab("Time") + ylab("CPP (uV)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+
+
+#CPP Group different plots
+ggplot(plotdata_CPP_CSD, aes(x=Time, y=CPP_CSD, color=Hemifield,fill=Hemifield)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP_CSD-se, ymax=CPP_CSD+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-4, 38),  xlim = c(-100, 1000 )) +
+    xlab("Time") + ylab("CPP (uV)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~Group)
+
+
+```
+
+###My Fav. way of depicting it:
+
+```{r, echo=FALSE, warning=FALSE}
+#CPP Group on same plot
+ggplot(plotdata_N2c_CSD, aes(x=Time, y=N2c_CSD, color=Hemifield,fill=Hemifield, linetype=Group)) + geom_line(size=1.4) + 
+    geom_ribbon(aes(ymin=N2c_CSD-se, ymax=N2c_CSD+se), alpha = 0.3, colour=NA) +
+    geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-50, 10), xlim = c(-100, 500)) +
+    xlab("Time(ms)") + ylab("N2c") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) 
+    theme(panel.margin = unit(2, "lines"))
+
+    
+#CPP Group on same plot
+ggplot(plotdata_CPP_CSD, aes(x=Time, y=CPP_CSD, color=Hemifield,fill=Hemifield, linetype=Group)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=CPP_CSD-se, ymax=CPP_CSD+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-4, 38),  xlim = c(-100, 1000 )) +
+    xlab("Time") + ylab("CPP (uV)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+
+
+```
+
+
+
+#Or could try having N2c and CPP on the sampe plot, Group on separate panels:
+
+###CSD transform applied:
+
+```{r, echo=FALSE, warning=FALSE}
+###################Plot N2c_CSD and CPP_CSD trace in the same plot #####################
+names(plotdata_CPP_CSD)[names(plotdata_CPP_CSD)=="CPP_CSD"] <- "Amplitude"
+names(plotdata_CPP_CSD)[names(plotdata_CPP_CSD)=="CPP_CSD_norm"] <- "Amplitude_norm"
+plotdata_CPP_CSD$Component<-"CPP"
+
+names(plotdata_N2c_CSD)[names(plotdata_N2c_CSD)=="N2c_CSD"] <- "Amplitude"
+names(plotdata_N2c_CSD)[names(plotdata_N2c_CSD)=="N2c_CSD_norm"] <- "Amplitude_norm"
+plotdata_N2c_CSD$Component<-"N2c"
+plotdata_N2_CPP<-rbind(plotdata_CPP_CSD,plotdata_N2c_CSD)
+
+
+ggplot(plotdata_N2_CPP, aes(x=Time, y=Amplitude, color=Hemifield, fill=Hemifield, linetype=Component)) + 
+    geom_line(size=1.4) + geom_ribbon(aes(ymin=Amplitude-se, ymax=Amplitude+se), alpha = 0.3, colour=NA) + 
+        geom_hline(yintercept=0, alpha = 0.5) + geom_vline(xintercept=0, alpha = 0.5) +   
+    coord_cartesian(ylim = c(-45, 38),  xlim = c(-100, 1000 )) +
+    xlab("Time") + ylab("CPP (uV)") +
+    theme(axis.title.x = element_text(face="bold", size=12),
+          axis.text.x  = element_text(face="bold", angle=0,  size=12)) +
+    theme(axis.title.y = element_text(face="bold", size=12),
+          axis.text.y  = element_text(angle=0, vjust=0.5, size=12)) +
+    theme(legend.title = element_text(size=11, face="bold")) +
+    theme(legend.text = element_text(size = 11, face = "bold")) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line = element_line(colour = "black")) + facet_wrap(~Group)
+
+
+```
+
+
+
